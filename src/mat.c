@@ -137,6 +137,42 @@ Mat_PrintNumber(enum matio_types type, void *data)
     }
 }
 
+#if defined(MAT73) && MAT73
+struct mat_copy_iter_data {
+    const char *name;
+    hid_t fid;
+};
+
+static herr_t
+Mat_VarCopyIterate(hid_t fid, const char *name, const H5L_info_t *info, void *op_data)
+{
+    herr_t herr;
+    H5O_info_t object_info;
+    struct mat_copy_iter_data *mat_data;
+
+    /* FIXME: follow symlinks, datatypes? */
+
+    /* Check that this is not the /#refs# or /"#subsystem#" group */
+    if ( 0 == strcmp(name, "#refs#") || 0 == strcmp(name, "#subsystem#") )
+        return 0;
+
+    H5Oget_info_by_name(fid, name, &object_info, H5P_DEFAULT);
+    if ( H5O_TYPE_DATASET != object_info.type && H5O_TYPE_GROUP != object_info.type )
+        return 0;
+
+    mat_data = (struct mat_copy_iter_data *)op_data;
+    if ( mat_data == NULL )
+        return -1;
+
+    if ( strcmp(mat_data->name,name) ) {
+        herr_t herr = H5Ocopy(fid, name, mat_data->fid, name, H5P_DEFAULT, H5P_DEFAULT);
+        if ( herr < 0 )
+            return herr;
+    }
+    return 0;
+}
+#endif
+
 mat_complex_split_t *
 ComplexMalloc(size_t nbytes)
 {
@@ -885,14 +921,34 @@ Mat_VarDelete(mat_t *mat, const char *name)
 
         tmp = Mat_CreateVer(tmp_name,mat->header,mat_file_ver);
         if ( tmp != NULL ) {
-            matvar_t *matvar;
             Mat_Rewind(mat);
-            while ( NULL != (matvar = Mat_VarReadNext(mat)) ) {
-                if ( strcmp(matvar->name,name) )
-                    Mat_VarWrite(tmp,matvar,matvar->compression);
-                else
-                    err = 0;
-                Mat_VarFree(matvar);
+#if defined(MAT73) && MAT73
+            if ( mat_file_ver == MAT_FT_MAT73 ) {
+                hid_t   fid;
+                hsize_t idx;
+                herr_t  herr;
+                struct mat_copy_iter_data mat_data;
+
+                fid = *(hid_t*)mat->fp;
+                idx = 0;
+                mat_data.name = name;
+                mat_data.fid = *(hid_t*)tmp->fp;
+                err = 0;
+                herr = H5Literate(fid, H5_INDEX_NAME, H5_ITER_NATIVE, &idx, Mat_VarCopyIterate, (void*)&mat_data);
+                if ( herr < 0 )
+                    err = 1;
+            }
+            else
+#endif
+            {
+                matvar_t *matvar;
+                while ( NULL != (matvar = Mat_VarReadNext(mat)) ) {
+                    if ( strcmp(matvar->name,name) )
+                        Mat_VarWrite(tmp,matvar,matvar->compression);
+                    else
+                        err = 0;
+                    Mat_VarFree(matvar);
+                }
             }
             Mat_Close(tmp);
 
