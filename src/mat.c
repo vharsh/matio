@@ -152,14 +152,6 @@ Mat_VarCopyIterate(hid_t fid, const char *name, const H5L_info_t *info, void *op
 
     /* FIXME: follow symlinks, datatypes? */
 
-    /* Check that this is not the /#refs# or /"#subsystem#" group */
-    if ( 0 == strcmp(name, "#refs#") || 0 == strcmp(name, "#subsystem#") )
-        return 0;
-
-    H5Oget_info_by_name(fid, name, &object_info, H5P_DEFAULT);
-    if ( H5O_TYPE_DATASET != object_info.type && H5O_TYPE_GROUP != object_info.type )
-        return 0;
-
     mat_data = (struct mat_copy_iter_data *)op_data;
     if ( mat_data == NULL )
         return -1;
